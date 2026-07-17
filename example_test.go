@@ -48,3 +48,29 @@ func ExampleSelection_Map() {
 	// Output:
 	// [0:one 1:two 2:three]
 }
+
+func ExampleSelection_Append() {
+	doc := cheerio.Load(`<ul><li>a</li></ul>`)
+	doc.Find("ul").Append(`<li>b</li>`).Prepend(`<li>z</li>`)
+	fmt.Println(doc.Find("ul").Html())
+	// Output:
+	// <li>z</li><li>a</li><li>b</li>
+}
+
+func ExampleSelection_Wrap() {
+	doc := cheerio.Load(`<div><span>x</span></div>`)
+	doc.Find("span").Wrap(`<b class="hl"></b>`)
+	fmt.Println(doc.Find("div").Html())
+	// Output:
+	// <b class="hl"><span>x</span></b>
+}
+
+func ExampleSelection_SerializeArray() {
+	doc := cheerio.Load(`<form>
+		<input type="text" name="user" value="ada">
+		<input type="checkbox" name="admin" value="yes" checked>
+	</form>`)
+	fmt.Println(doc.Find("form").Serialize())
+	// Output:
+	// user=ada&admin=yes
+}

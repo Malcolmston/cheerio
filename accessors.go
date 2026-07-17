@@ -132,6 +132,31 @@ func (s *Selection) SetText(text string) *Selection {
 	return s
 }
 
+// SetHtml parses html and replaces the children of every selected element with
+// the resulting nodes. For every target but the first the nodes are cloned.
+func (s *Selection) SetHtml(html string) *Selection {
+	nodes := parseFragment(html)
+	for i, n := range s.nodes {
+		if n.Type != ElementNode {
+			continue
+		}
+		for _, c := range n.Children {
+			c.Parent = nil
+		}
+		n.Children = nil
+		var batch []*Node
+		if i == 0 {
+			batch = nodes
+		} else {
+			batch = cloneNodes(nodes)
+		}
+		for _, c := range batch {
+			n.AppendChild(c)
+		}
+	}
+	return s
+}
+
 // Html returns the inner HTML of the first selected node (its serialized
 // children).
 func (s *Selection) Html() string {
@@ -192,6 +217,126 @@ func (s *Selection) Val() string {
 		}
 		return ""
 	}
+}
+
+// SetVal sets the value of every selected form control and returns the
+// receiver. For textarea elements the value replaces the text content; for a
+// select the matching option is marked selected (others deselected); for other
+// controls the "value" attribute is set.
+func (s *Selection) SetVal(val string) *Selection {
+	for _, n := range s.nodes {
+		if n.Type != ElementNode {
+			continue
+		}
+		switch n.Data {
+		case "textarea":
+			child := &Node{Type: TextNode, Data: val, Parent: n}
+			n.Children = []*Node{child}
+		case "select":
+			for _, opt := range n.elementChildren() {
+				if opt.Data != "option" {
+					continue
+				}
+				if optionValue(opt) == val {
+					opt.setAttr("selected", "")
+				} else {
+					opt.removeAttr("selected")
+				}
+			}
+		default:
+			n.setAttr("value", val)
+		}
+	}
+	return s
+}
+
+// SetAttrs sets every key/value pair of attrs on all selected elements and
+// returns the receiver.
+func (s *Selection) SetAttrs(attrs map[string]string) *Selection {
+	for _, n := range s.nodes {
+		if n.Type != ElementNode {
+			continue
+		}
+		for k, v := range attrs {
+			n.setAttr(k, v)
+		}
+	}
+	return s
+}
+
+// booleanProps are the attributes treated as boolean properties by Prop and
+// SetProp: their mere presence means true.
+var booleanProps = map[string]bool{
+	"checked": true, "selected": true, "disabled": true, "readonly": true,
+	"multiple": true, "required": true, "autofocus": true, "hidden": true,
+	"async": true, "defer": true, "ismap": true, "loop": true, "muted": true,
+	"open": true, "novalidate": true, "controls": true, "default": true,
+}
+
+// Prop returns a property of the first selected element and whether it is
+// defined. Boolean properties (checked, selected, disabled, ...) return "true"
+// or "false" based on the presence of the corresponding attribute. The special
+// properties "tagName"/"nodeName" return the upper-cased tag; "outerHTML",
+// "innerHTML" and "textContent" return the serialized or text content. Any
+// other name falls back to the attribute of the same name.
+func (s *Selection) Prop(name string) (string, bool) {
+	if len(s.nodes) == 0 {
+		return "", false
+	}
+	n := s.nodes[0]
+	lname := strings.ToLower(name)
+	if booleanProps[lname] {
+		if _, ok := n.AttrValue(lname); ok {
+			return "true", true
+		}
+		return "false", true
+	}
+	switch lname {
+	case "tagname", "nodename":
+		if n.Type == ElementNode {
+			return strings.ToUpper(n.Data), true
+		}
+		return "", false
+	case "outerhtml":
+		return s.OuterHtml(), true
+	case "innerhtml":
+		return s.Html(), true
+	case "textcontent":
+		return s.Text(), true
+	}
+	return n.AttrValue(lname)
+}
+
+// SetProp sets a property on every selected element and returns the receiver.
+// For boolean properties a value of "" or "false" removes the attribute and any
+// other value adds it; other properties set the attribute of the same name.
+func (s *Selection) SetProp(name, val string) *Selection {
+	lname := strings.ToLower(name)
+	for _, n := range s.nodes {
+		if n.Type != ElementNode {
+			continue
+		}
+		if booleanProps[lname] {
+			if val == "" || val == "false" {
+				n.removeAttr(lname)
+			} else {
+				n.setAttr(lname, "")
+			}
+			continue
+		}
+		n.setAttr(lname, val)
+	}
+	return s
+}
+
+// ToString returns the serialized outer HTML of every selected node,
+// concatenated in document order.
+func (s *Selection) ToString() string {
+	var b strings.Builder
+	for _, n := range s.nodes {
+		serialize(n, &b)
+	}
+	return b.String()
 }
 
 // TagName returns the tag name of the first selected element, or "".

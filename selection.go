@@ -39,6 +39,7 @@ func (d *Document) Find(selector string) *Selection {
 type Selection struct {
 	doc   *Document
 	nodes []*Node
+	prev  *Selection // the selection this one was derived from (for End/AddBack)
 }
 
 // newSelection builds a Selection, de-duplicating while preserving order.
@@ -65,7 +66,7 @@ func (s *Selection) Find(selector string) *Selection {
 			})
 		}
 	}
-	return s.doc.newSelection(out)
+	return s.pushStack(out)
 }
 
 // Children returns the immediate element children of the selected nodes,
@@ -75,7 +76,7 @@ func (s *Selection) Children(selector ...string) *Selection {
 	for _, n := range s.nodes {
 		out = append(out, n.elementChildren()...)
 	}
-	return s.doc.newSelection(out).maybeFilter(selector)
+	return s.pushStack(out).maybeFilter(selector)
 }
 
 // Parent returns the direct parent of each selected node (elements only).
@@ -86,7 +87,7 @@ func (s *Selection) Parent(selector ...string) *Selection {
 			out = append(out, n.Parent)
 		}
 	}
-	return s.doc.newSelection(out).maybeFilter(selector)
+	return s.pushStack(out).maybeFilter(selector)
 }
 
 // Parents returns all ancestors of each selected node, nearest first within
@@ -98,7 +99,7 @@ func (s *Selection) Parents(selector ...string) *Selection {
 			out = append(out, a)
 		}
 	}
-	return s.doc.newSelection(out).maybeFilter(selector)
+	return s.pushStack(out).maybeFilter(selector)
 }
 
 // Closest returns, for each selected node, the nearest ancestor-or-self that
@@ -114,7 +115,7 @@ func (s *Selection) Closest(selector string) *Selection {
 			}
 		}
 	}
-	return s.doc.newSelection(out)
+	return s.pushStack(out)
 }
 
 // Siblings returns the element siblings of each selected node (excluding the
@@ -131,7 +132,7 @@ func (s *Selection) Siblings(selector ...string) *Selection {
 			}
 		}
 	}
-	return s.doc.newSelection(out).maybeFilter(selector)
+	return s.pushStack(out).maybeFilter(selector)
 }
 
 // Next returns the immediately following element sibling of each node.
@@ -142,7 +143,7 @@ func (s *Selection) Next(selector ...string) *Selection {
 			out = append(out, sib)
 		}
 	}
-	return s.doc.newSelection(out).maybeFilter(selector)
+	return s.pushStack(out).maybeFilter(selector)
 }
 
 // Prev returns the immediately preceding element sibling of each node.
@@ -153,7 +154,7 @@ func (s *Selection) Prev(selector ...string) *Selection {
 			out = append(out, sib)
 		}
 	}
-	return s.doc.newSelection(out).maybeFilter(selector)
+	return s.pushStack(out).maybeFilter(selector)
 }
 
 // NextAll returns all following element siblings of each node.
@@ -164,7 +165,7 @@ func (s *Selection) NextAll(selector ...string) *Selection {
 			out = append(out, sib)
 		}
 	}
-	return s.doc.newSelection(out).maybeFilter(selector)
+	return s.pushStack(out).maybeFilter(selector)
 }
 
 // PrevAll returns all preceding element siblings of each node.
@@ -175,7 +176,7 @@ func (s *Selection) PrevAll(selector ...string) *Selection {
 			out = append(out, sib)
 		}
 	}
-	return s.doc.newSelection(out).maybeFilter(selector)
+	return s.pushStack(out).maybeFilter(selector)
 }
 
 // Filter returns the subset of selected nodes that match the selector.
@@ -187,7 +188,7 @@ func (s *Selection) Filter(selector string) *Selection {
 			out = append(out, n)
 		}
 	}
-	return s.doc.newSelection(out)
+	return s.pushStack(out)
 }
 
 // FilterFunc returns the subset for which the predicate returns true. The
@@ -199,7 +200,7 @@ func (s *Selection) FilterFunc(pred func(i int, n *Node) bool) *Selection {
 			out = append(out, n)
 		}
 	}
-	return s.doc.newSelection(out)
+	return s.pushStack(out)
 }
 
 // Not returns the selected nodes that do NOT match the selector.
@@ -211,7 +212,7 @@ func (s *Selection) Not(selector string) *Selection {
 			out = append(out, n)
 		}
 	}
-	return s.doc.newSelection(out)
+	return s.pushStack(out)
 }
 
 // Is reports whether at least one selected node matches the selector.
@@ -242,7 +243,7 @@ func (s *Selection) Has(selector string) *Selection {
 			out = append(out, n)
 		}
 	}
-	return s.doc.newSelection(out)
+	return s.pushStack(out)
 }
 
 // Eq returns a Selection containing only the node at index i (negative counts
@@ -252,9 +253,9 @@ func (s *Selection) Eq(i int) *Selection {
 		i += len(s.nodes)
 	}
 	if i < 0 || i >= len(s.nodes) {
-		return &Selection{doc: s.doc}
+		return &Selection{doc: s.doc, prev: s}
 	}
-	return &Selection{doc: s.doc, nodes: []*Node{s.nodes[i]}}
+	return &Selection{doc: s.doc, nodes: []*Node{s.nodes[i]}, prev: s}
 }
 
 // First returns the first node as a Selection.
@@ -280,9 +281,9 @@ func (s *Selection) Slice(start, end int) *Selection {
 		end = n
 	}
 	if start >= end {
-		return &Selection{doc: s.doc}
+		return &Selection{doc: s.doc, prev: s}
 	}
-	return &Selection{doc: s.doc, nodes: append([]*Node(nil), s.nodes[start:end]...)}
+	return &Selection{doc: s.doc, nodes: append([]*Node(nil), s.nodes[start:end]...), prev: s}
 }
 
 // Each invokes fn for every selected node in order and returns the receiver
@@ -319,12 +320,35 @@ func (s *Selection) Get(i int) *Node {
 func (s *Selection) Add(selector string) *Selection {
 	extra := s.doc.Find(selector).nodes
 	combined := append(append([]*Node(nil), s.nodes...), extra...)
-	return s.doc.newSelection(combined)
+	return s.pushStack(orderedUnique(s.doc, combined))
 }
 
-// End is a convenience that returns the document root selection; it exists for
-// jQuery familiarity when a caller wants to restart a chain.
-func (s *Selection) End() *Selection { return s.doc.Root() }
+// End returns the Selection that this one was derived from, restoring the
+// previous stage of a traversal chain (jQuery's .end()). If the receiver was
+// not derived from another Selection (for example a top-level Document.Find),
+// End returns the document root selection.
+func (s *Selection) End() *Selection {
+	if s.prev != nil {
+		return s.prev
+	}
+	return s.doc.Root()
+}
+
+// AddBack adds the previous set of matched elements (the Selection this one was
+// derived from) to the current set, optionally filtered by a selector. It is
+// the inverse companion to End: where End discards the current stage, AddBack
+// merges it with the prior one.
+func (s *Selection) AddBack(selector ...string) *Selection {
+	if s.prev == nil {
+		return s
+	}
+	prev := s.prev
+	if len(selector) > 0 && strings.TrimSpace(selector[0]) != "" {
+		prev = prev.Filter(selector[0])
+	}
+	combined := append(append([]*Node(nil), s.nodes...), prev.nodes...)
+	return s.pushStack(orderedUnique(s.doc, combined))
+}
 
 // maybeFilter applies an optional trailing selector argument.
 func (s *Selection) maybeFilter(selector []string) *Selection {

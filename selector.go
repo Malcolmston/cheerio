@@ -42,13 +42,15 @@ type attrMatcher struct {
 	key string
 	op  string // "" (exists), "=", "^=", "$=", "*=", "~=", "|="
 	val string
+	ci  bool // case-insensitive match ([a=v i])
 }
 
 // pseudoMatcher matches a pseudo-class.
 type pseudoMatcher struct {
 	name string       // first-child, last-child, nth-child, not, ...
 	a, b int          // for nth-child: an+b
-	arg  selectorList // for :not(...)
+	arg  selectorList // for :not(...) and :has(...)
+	text string       // for :contains(...)
 }
 
 // parseSelector compiles a selector string into a selectorList. A parse
@@ -196,6 +198,14 @@ func parseCompound(s string, i int) (selectorPart, int, bool) {
 			part.pseudos = append(part.pseudos, pm)
 			i = ni
 			started = true
+		case c == '|':
+			// CSS namespace separator: the local name follows. We have no
+			// namespace information, so we match on the local name only.
+			i++
+			name, ni := readTagName(s, i)
+			part.tag = strings.ToLower(name)
+			i = ni
+			started = true
 		case isTagNameStart(c):
 			name, ni := readTagName(s, i)
 			part.tag = strings.ToLower(name)
@@ -247,7 +257,21 @@ func parseAttr(s string, i int) (attrMatcher, int, bool) {
 	am.key = strings.ToLower(strings.TrimSpace(body[:opIdx]))
 	am.op = opStr
 	val := strings.TrimSpace(body[opIdx+len(opStr):])
-	val = strings.TrimSpace(val)
+	// Detect a trailing case-sensitivity flag (" i" or " s") that sits outside
+	// any quotes, e.g. [type="TEXT" i] or [type=text i].
+	if n := len(val); n >= 2 && (val[n-2] == ' ' || val[n-2] == '\t') {
+		switch val[n-1] {
+		case 'i', 'I':
+			if cand := strings.TrimSpace(val[:n-2]); cand != "" {
+				am.ci = true
+				val = cand
+			}
+		case 's', 'S':
+			if cand := strings.TrimSpace(val[:n-2]); cand != "" {
+				val = cand
+			}
+		}
+	}
 	if len(val) >= 2 && (val[0] == '"' || val[0] == '\'') && val[len(val)-1] == val[0] {
 		val = val[1 : len(val)-1]
 	}
@@ -292,9 +316,11 @@ func parsePseudo(s string, i int) (pseudoMatcher, int, bool) {
 		arg := s[start:j]
 		i = j + 1
 		switch name {
-		case "not":
+		case "not", "has":
 			pm.arg = parseSelector(arg)
-		case "nth-child", "nth-last-child":
+		case "contains":
+			pm.text = unquoteArg(arg)
+		case "nth-child", "nth-last-child", "nth-of-type", "nth-last-of-type":
 			a, b, ok := parseNth(arg)
 			if !ok {
 				return pm, i, false
@@ -305,6 +331,16 @@ func parsePseudo(s string, i int) (pseudoMatcher, int, bool) {
 		}
 	}
 	return pm, i, true
+}
+
+// unquoteArg trims whitespace and a single layer of matching quotes from a
+// pseudo-class argument (used by :contains).
+func unquoteArg(arg string) string {
+	arg = strings.TrimSpace(arg)
+	if len(arg) >= 2 && (arg[0] == '"' || arg[0] == '\'') && arg[len(arg)-1] == arg[0] {
+		return arg[1 : len(arg)-1]
+	}
+	return arg
 }
 
 // parseNth parses the argument of nth-child: "odd", "even", integer, or the
@@ -484,29 +520,34 @@ func (am attrMatcher) match(n *Node) bool {
 	if !ok {
 		return false
 	}
+	want := am.val
+	if am.ci {
+		v = strings.ToLower(v)
+		want = strings.ToLower(want)
+	}
 	switch am.op {
 	case "":
 		return true
 	case "=":
-		return v == am.val
+		return v == want
 	case "^=":
-		return am.val != "" && strings.HasPrefix(v, am.val)
+		return want != "" && strings.HasPrefix(v, want)
 	case "$=":
-		return am.val != "" && strings.HasSuffix(v, am.val)
+		return want != "" && strings.HasSuffix(v, want)
 	case "*=":
-		return am.val != "" && strings.Contains(v, am.val)
+		return want != "" && strings.Contains(v, want)
 	case "~=":
-		if am.val == "" {
+		if want == "" {
 			return false
 		}
 		for _, f := range strings.Fields(v) {
-			if f == am.val {
+			if f == want {
 				return true
 			}
 		}
 		return false
 	case "|=":
-		return v == am.val || strings.HasPrefix(v, am.val+"-")
+		return v == want || strings.HasPrefix(v, want+"-")
 	}
 	return false
 }
@@ -520,16 +561,152 @@ func (pm pseudoMatcher) match(n *Node) bool {
 		return nextElementSibling(n) == nil
 	case "only-child":
 		return previousElementSibling(n) == nil && nextElementSibling(n) == nil
+	case "first-of-type":
+		return previousSiblingOfType(n) == nil
+	case "last-of-type":
+		return nextSiblingOfType(n) == nil
+	case "only-of-type":
+		return previousSiblingOfType(n) == nil && nextSiblingOfType(n) == nil
 	case "nth-child":
 		return matchNth(elementIndex(n), pm.a, pm.b)
 	case "nth-last-child":
 		return matchNth(elementIndexFromEnd(n), pm.a, pm.b)
+	case "nth-of-type":
+		return matchNth(typeIndex(n), pm.a, pm.b)
+	case "nth-last-of-type":
+		return matchNth(typeIndexFromEnd(n), pm.a, pm.b)
 	case "empty":
 		return len(n.elementChildren()) == 0 && !hasNonSpaceText(n)
+	case "parent":
+		return len(n.elementChildren()) > 0 || hasNonSpaceText(n)
+	case "root":
+		return n.Parent != nil && n.Parent.Type == DocumentNode
 	case "not":
 		return !pm.arg.matches(n)
+	case "has":
+		found := false
+		for _, c := range n.Children {
+			walkElements(c, func(e *Node) {
+				if !found && pm.arg.matches(e) {
+					found = true
+				}
+			})
+		}
+		return found
+	case "contains":
+		var b strings.Builder
+		collectText(n, &b)
+		return strings.Contains(b.String(), pm.text)
+	case "input":
+		switch n.Data {
+		case "input", "textarea", "select", "button":
+			return true
+		}
+		return false
+	case "header":
+		switch n.Data {
+		case "h1", "h2", "h3", "h4", "h5", "h6":
+			return true
+		}
+		return false
+	case "checked":
+		if n.Data == "input" {
+			t := strings.ToLower(attrOr(n, "type"))
+			if t == "checkbox" || t == "radio" {
+				_, ok := n.AttrValue("checked")
+				return ok
+			}
+			return false
+		}
+		if n.Data == "option" {
+			_, ok := n.AttrValue("selected")
+			return ok
+		}
+		return false
+	case "selected":
+		if n.Data != "option" {
+			return false
+		}
+		_, ok := n.AttrValue("selected")
+		return ok
+	case "disabled":
+		_, ok := n.AttrValue("disabled")
+		return ok && canBeDisabled(n)
+	case "enabled":
+		_, ok := n.AttrValue("disabled")
+		return !ok && canBeDisabled(n)
 	}
 	return false
+}
+
+// canBeDisabled reports whether n is a control that supports the disabled
+// state, used by :enabled and :disabled.
+func canBeDisabled(n *Node) bool {
+	switch n.Data {
+	case "input", "button", "select", "textarea", "optgroup", "option", "fieldset":
+		return true
+	}
+	return false
+}
+
+// previousSiblingOfType returns the nearest preceding element sibling of n with
+// the same tag name, or nil.
+func previousSiblingOfType(n *Node) *Node {
+	for sib := previousElementSibling(n); sib != nil; sib = previousElementSibling(sib) {
+		if sib.Data == n.Data {
+			return sib
+		}
+	}
+	return nil
+}
+
+// nextSiblingOfType returns the nearest following element sibling of n with the
+// same tag name, or nil.
+func nextSiblingOfType(n *Node) *Node {
+	for sib := nextElementSibling(n); sib != nil; sib = nextElementSibling(sib) {
+		if sib.Data == n.Data {
+			return sib
+		}
+	}
+	return nil
+}
+
+// typeIndex returns the 1-based position of n among its same-type element
+// siblings.
+func typeIndex(n *Node) int {
+	if n.Parent == nil {
+		return 1
+	}
+	idx := 0
+	for _, c := range n.Parent.Children {
+		if c.Type == ElementNode && c.Data == n.Data {
+			idx++
+			if c == n {
+				return idx
+			}
+		}
+	}
+	return idx
+}
+
+// typeIndexFromEnd returns the 1-based position of n among its same-type element
+// siblings, counting from the last one.
+func typeIndexFromEnd(n *Node) int {
+	if n.Parent == nil {
+		return 1
+	}
+	var same []*Node
+	for _, c := range n.Parent.Children {
+		if c.Type == ElementNode && c.Data == n.Data {
+			same = append(same, c)
+		}
+	}
+	for i, c := range same {
+		if c == n {
+			return len(same) - i
+		}
+	}
+	return 1
 }
 
 // matchNth reports whether a 1-based index matches an+b.

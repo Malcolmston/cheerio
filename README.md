@@ -78,11 +78,13 @@ links.
 
 | Category       | Supported                                                                                                                              |
 |----------------|--------------------------------------------------------------------------------------------------------------------------------------|
-| Simple         | `type`, `*`, `#id`, `.class`                                                                                                          |
-| Attribute      | `[a]`, `[a=v]`, `[a^=v]`, `[a$=v]`, `[a*=v]`, `[a~=v]`, `[a\|=v]`                                                                     |
+| Simple         | `type`, `*`, `#id`, `.class`, namespace `svg\|rect`, `*\|title`                                                                       |
+| Attribute      | `[a]`, `[a=v]`, `[a^=v]`, `[a$=v]`, `[a*=v]`, `[a~=v]`, `[a\|=v]`, case-insensitive `[a=v i]`                                          |
 | Combinators    | descendant (space), child `>`, adjacent sibling `+`, general sibling `~`                                                              |
 | Lists          | comma-separated groups `a, b, c`                                                                                                      |
-| Pseudo-classes | `:first-child`, `:last-child`, `:only-child`, `:empty`, `:nth-child(n)` (with `an+b`, `odd`, `even`), `:nth-last-child(...)`, `:not(sel)` |
+| Structural     | `:first-child`, `:last-child`, `:only-child`, `:first-of-type`, `:last-of-type`, `:only-of-type`, `:empty`, `:root`, `:parent`, `:nth-child(n)`, `:nth-last-child(n)`, `:nth-of-type(n)`, `:nth-last-of-type(n)` (`an+b`, `odd`, `even`) |
+| Functional     | `:not(sel)`, `:has(sel)`, `:contains(text)`                                                                                           |
+| Forms/content  | `:input`, `:checked`, `:selected`, `:enabled`, `:disabled`, `:header`                                                                |
 
 Compound selectors combine all of the above, e.g.
 `ul.menu > li:first-child a[href^="/"]`.
@@ -92,16 +94,24 @@ Compound selectors combine all of the above, e.g.
 `Document.Find` returns a chainable `*Selection` — an ordered, de-duplicated
 set of matched nodes.
 
-**Traversal:** `Find`, `Children`, `Parent`, `Parents`, `Closest`, `Siblings`,
-`Next`, `Prev`, `NextAll`, `PrevAll`, `Filter`, `FilterFunc`, `Not`, `Is`,
-`Has`, `Add`, `Eq`, `First`, `Last`, `Slice`, `Each`, `Map`, `Get`, `Length`,
-`Nodes`, `Root`, `End`.
+**Traversal:** `Find`, `Children`, `Contents`, `Parent`, `Parents`,
+`ParentsUntil`, `Closest`, `Siblings`, `Next`, `Prev`, `NextAll`, `PrevAll`,
+`NextUntil`, `PrevUntil`, `Filter`, `FilterFunc`, `Not`, `Is`, `Has`, `Add`,
+`AddSelection`, `AddNodes`, `AddBack`, `End`, `Eq`, `First`, `Last`, `Even`,
+`Odd`, `Slice`, `Index`, `IndexSelector`, `IndexOfNode`, `Each`, `Map`, `Get`,
+`Length`, `Nodes`, `Root`.
 
-**Accessors:** `Attr`, `AttrOr`, `Text`, `Html` (inner), `OuterHtml`,
-`HasClass`, `Val`, `TagName`.
+**Accessors:** `Attr`, `AttrOr`, `Prop`, `Text`, `Html` (inner), `OuterHtml`,
+`ToString`, `HasClass`, `Css`, `Data`, `DataOr`, `DataMap`, `Val`, `TagName`.
 
-**Mutation (light):** `SetAttr`, `RemoveAttr`, `AddClass`, `RemoveClass`,
-`ToggleClass`, `SetText`.
+**Manipulation:** `SetAttr`, `SetAttrs`, `RemoveAttr`, `AddClass`,
+`RemoveClass`, `ToggleClass`, `SetText`, `SetHtml`, `SetVal`, `SetProp`,
+`SetCss`, `SetCssMap`, `SetData`, `Append`, `Prepend`, `Before`, `After`,
+`AppendTo`, `PrependTo`, `InsertBefore`, `InsertAfter`, `ReplaceWith`,
+`Remove`, `Empty`, `Clone`, `Wrap`, `WrapAll`, `WrapInner`, `Unwrap`. Each
+content method also has `…Nodes` and `…Selection` forms.
+
+**Forms:** `SerializeArray`, `Serialize`.
 
 ## Determinism
 

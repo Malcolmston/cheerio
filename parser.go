@@ -102,6 +102,7 @@ func (p *parser) handleStartTag(tok token) {
 	name := tok.data
 
 	p.applyImplicitCloses(name)
+	p.applyImpliedTableSection(name)
 
 	el := &Node{Type: ElementNode, Data: name, Attr: tok.attr}
 	p.current().AppendChild(el)
@@ -124,6 +125,33 @@ func (p *parser) handleStartTag(tok token) {
 		return
 	}
 
+	p.push(el)
+}
+
+// applyImpliedTableSection inserts an implicit <tbody> when a <tr> is opened
+// directly inside a <table>, mirroring the HTML tree-construction rule that
+// gives table rows an implied section parent. A <td>/<th> opened directly in a
+// <table> likewise gets an implied <tbody><tr>.
+func (p *parser) applyImpliedTableSection(name string) {
+	switch name {
+	case "tr":
+		if p.current().Data == "table" {
+			p.openImplied("tbody")
+		}
+	case "td", "th":
+		if p.current().Data == "table" {
+			p.openImplied("tbody")
+			p.openImplied("tr")
+		} else if p.current().Data == "tbody" || p.current().Data == "thead" || p.current().Data == "tfoot" {
+			p.openImplied("tr")
+		}
+	}
+}
+
+// openImplied creates and pushes a synthetic element with the given name.
+func (p *parser) openImplied(name string) {
+	el := &Node{Type: ElementNode, Data: name}
+	p.current().AppendChild(el)
 	p.push(el)
 }
 

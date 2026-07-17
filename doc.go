@@ -32,14 +32,23 @@
 // The selector engine supports:
 //
 //   - type selectors (div), the universal selector (*), #id and .class;
+//   - namespace-qualified type selectors (svg|rect, *|title), matched on the
+//     local name;
 //   - attribute selectors [attr], [attr=v], [attr^=v], [attr$=v], [attr*=v],
-//     [attr~=v] and [attr|=v];
+//     [attr~=v] and [attr|=v], with an optional case-insensitivity flag
+//     ([attr=v i]);
 //   - selector lists separated by commas;
 //   - combinators: descendant (space), child (>), adjacent sibling (+) and
 //     general sibling (~);
-//   - pseudo-classes :first-child, :last-child, :only-child, :empty,
-//     :nth-child(n) with the an+b microsyntax plus the odd/even keywords,
-//     :nth-last-child(...) and :not(selector).
+//   - structural pseudo-classes :first-child, :last-child, :only-child,
+//     :first-of-type, :last-of-type, :only-of-type, :empty, :root, :parent,
+//     :nth-child(n), :nth-last-child(n), :nth-of-type(n) and
+//     :nth-last-of-type(n) (each with the an+b microsyntax plus the odd/even
+//     keywords);
+//   - functional pseudo-classes :not(selector), :has(selector) and
+//     :contains(text);
+//   - form and content pseudo-classes :input, :checked, :selected, :enabled,
+//     :disabled and :header.
 //
 // Compound selectors combine any of the above (for example
 // "ul.menu > li:first-child a[href^=\"/\"]").
@@ -48,13 +57,26 @@
 //
 // Document.Find runs a selector over the whole document and returns a
 // Selection: an ordered, de-duplicated set of matched nodes. Selections are
-// chainable. Traversal methods include Find, Children, Parent, Parents,
-// Closest, Siblings, Next, Prev, NextAll, PrevAll, Filter, FilterFunc, Not,
-// Is, Has, Add, Eq, First, Last, Slice, Each, Map, Get and Length.
+// chainable.
 //
-// Accessors include Attr/AttrOr, Text, Html (inner HTML), OuterHtml, HasClass,
-// Val and TagName. Light mutation is supported through SetAttr, RemoveAttr,
-// AddClass, RemoveClass, ToggleClass and SetText.
+// Traversal: Find, Children, Contents, Parent, Parents, ParentsUntil, Closest,
+// Siblings, Next, Prev, NextAll, PrevAll, NextUntil, PrevUntil, Filter,
+// FilterFunc, Not, Is, Has, Add, AddSelection, AddNodes, AddBack, End, Eq,
+// First, Last, Even, Odd, Slice, Index, IndexSelector, IndexOfNode, Each, Map,
+// Get and Length.
+//
+// Accessors: Attr, AttrOr, Prop, Text, Html (inner HTML), OuterHtml, ToString,
+// HasClass, Css, Data, DataOr, DataMap, Val and TagName.
+//
+// Manipulation: SetAttr, SetAttrs, RemoveAttr, AddClass, RemoveClass,
+// ToggleClass, SetText, SetHtml, SetVal, SetProp, SetCss, SetCssMap, SetData,
+// Append, Prepend, Before, After, AppendTo, PrependTo, InsertBefore,
+// InsertAfter, ReplaceWith, Remove, Empty, Clone, Wrap, WrapAll, WrapInner and
+// Unwrap. Each content method has string, node and Selection accepting forms.
+//
+// Forms: SerializeArray returns the successful form controls of a selection as
+// name/value pairs, and Serialize encodes them as an
+// application/x-www-form-urlencoded string.
 //
 // # Example
 //

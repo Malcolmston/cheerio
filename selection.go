@@ -54,17 +54,44 @@ func (s *Selection) Length() int { return len(s.nodes) }
 func (s *Selection) Nodes() []*Node { return s.nodes }
 
 // Find returns the descendants of the selected nodes that match the selector.
+//
+// A selector member that begins with a combinator is treated as relative to
+// each selected node (its :scope): "> li" matches immediate element children,
+// "+ .b" the immediately following sibling and "~ .b" any following sibling.
+// Ordinary members continue to match descendants only.
 func (s *Selection) Find(selector string) *Selection {
-	sel := parseSelector(selector)
-	var out []*Node
-	for _, n := range s.nodes {
-		for _, c := range n.Children {
-			walkElements(c, func(e *Node) {
-				if sel.matches(e) {
-					out = append(out, e)
-				}
-			})
+	list := parseSelector(selector)
+	var normal, scoped selectorList
+	for _, cs := range list {
+		if cs.lead == combNone {
+			normal = append(normal, cs)
+		} else {
+			scoped = append(scoped, cs)
 		}
+	}
+	var out []*Node
+	if len(normal) > 0 {
+		for _, n := range s.nodes {
+			for _, c := range n.Children {
+				walkElements(c, func(e *Node) {
+					if normal.matches(e) {
+						out = append(out, e)
+					}
+				})
+			}
+		}
+	}
+	if len(scoped) > 0 && s.doc != nil {
+		walkElements(s.doc.root, func(e *Node) {
+			for _, cs := range scoped {
+				for _, scope := range s.nodes {
+					if cs.matchScoped(e, scope) {
+						out = append(out, e)
+						return
+					}
+				}
+			}
+		})
 	}
 	return s.pushStack(out)
 }

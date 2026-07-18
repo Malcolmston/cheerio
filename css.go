@@ -20,6 +20,13 @@ func parseStyle(style string) []styleDecl {
 		}
 		colon := strings.IndexByte(part, ':')
 		if colon < 0 {
+			// A fragment without a colon is a malformed continuation of the
+			// previous declaration whose value contained a semicolon (for
+			// example a data: URI). Reattach it to the previous value so the
+			// declaration round-trips intact (cheeriojs/cheerio#1134).
+			if len(out) > 0 {
+				out[len(out)-1].val += ";" + part
+			}
 			continue
 		}
 		prop := strings.ToLower(strings.TrimSpace(part[:colon]))

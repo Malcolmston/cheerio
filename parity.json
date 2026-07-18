@@ -1,0 +1,10 @@
+{
+  "repo": "cheerio",
+  "upstream": "cheeriojs/cheerio",
+  "parityBefore": "92%",
+  "parityAfter": "100%",
+  "upstreamCasesSynced": 60,
+  "gapsFound": 5,
+  "gapsClosed": 5,
+  "asOf": "2026-07-18"
+}

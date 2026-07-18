@@ -215,6 +215,14 @@ func (s *Selection) Val() string {
 		if v, ok := n.AttrValue("value"); ok {
 			return v
 		}
+		// A checkbox or radio without an explicit value submits "on", matching
+		// the HTML default value used by browsers and jQuery's .val().
+		if n.Data == "input" {
+			switch strings.ToLower(attrOr(n, "type")) {
+			case "checkbox", "radio":
+				return "on"
+			}
+		}
 		return ""
 	}
 }

@@ -15,6 +15,11 @@ type complexSelector struct {
 	// parts[0] has combinator combNone; subsequent parts carry the combinator
 	// that links them to the previous part.
 	parts []selectorPart
+	// lead is the combinator a scoped (relative) selector begins with, such as
+	// the ">" in "> li" or the "+" in "+ .b". It is combNone for ordinary
+	// selectors and is only consulted by Selection.Find, which evaluates it
+	// against each context node as though a :scope compound preceded it.
+	lead combinator
 }
 
 type combinator int
@@ -138,6 +143,7 @@ func parseComplex(s string) (complexSelector, bool) {
 			return complexSelector{}, false
 		}
 		if len(cs.parts) == 0 {
+			cs.lead = pendingComb
 			part.comb = combNone
 		} else {
 			part.comb = pendingComb
@@ -475,6 +481,83 @@ func (cs complexSelector) matchFrom(n *Node, idx int) bool {
 	case combSibling:
 		for sib := previousElementSibling(n); sib != nil; sib = previousElementSibling(sib) {
 			if cs.matchFrom(sib, prev) {
+				return true
+			}
+		}
+		return false
+	}
+	return false
+}
+
+// matchScoped reports whether n matches this complex selector when it is
+// evaluated relative to scope, as though a :scope compound preceded the leading
+// combinator (cs.lead). It backs Selection.Find's support for selectors that
+// begin with a combinator, such as "> li", "+ .b" or "~ .b". When cs.lead is
+// combNone the scope is ignored and the result matches the ordinary semantics.
+func (cs complexSelector) matchScoped(n, scope *Node) bool {
+	if len(cs.parts) == 0 {
+		return false
+	}
+	return cs.matchFromScoped(n, len(cs.parts)-1, scope)
+}
+
+// matchFromScoped mirrors matchFrom but threads a scope node so that, once the
+// leftmost compound is reached, the leading combinator is checked against the
+// scope rather than being ignored.
+func (cs complexSelector) matchFromScoped(n *Node, idx int, scope *Node) bool {
+	part := cs.parts[idx]
+	if !part.matchSelf(n) {
+		return false
+	}
+	if idx == 0 {
+		switch cs.lead {
+		case combNone:
+			return true
+		case combDescendant:
+			for a := n.Parent; a != nil; a = a.Parent {
+				if a == scope {
+					return true
+				}
+			}
+			return false
+		case combChild:
+			return n.Parent == scope
+		case combAdjacent:
+			return previousElementSibling(n) == scope
+		case combSibling:
+			for sib := previousElementSibling(n); sib != nil; sib = previousElementSibling(sib) {
+				if sib == scope {
+					return true
+				}
+			}
+			return false
+		}
+		return false
+	}
+	prev := idx - 1
+	switch part.comb {
+	case combDescendant:
+		for a := n.Parent; a != nil && a.Type == ElementNode; a = a.Parent {
+			if cs.matchFromScoped(a, prev, scope) {
+				return true
+			}
+		}
+		return false
+	case combChild:
+		p := n.Parent
+		if p != nil && p.Type == ElementNode {
+			return cs.matchFromScoped(p, prev, scope)
+		}
+		return false
+	case combAdjacent:
+		sib := previousElementSibling(n)
+		if sib != nil {
+			return cs.matchFromScoped(sib, prev, scope)
+		}
+		return false
+	case combSibling:
+		for sib := previousElementSibling(n); sib != nil; sib = previousElementSibling(sib) {
+			if cs.matchFromScoped(sib, prev, scope) {
 				return true
 			}
 		}

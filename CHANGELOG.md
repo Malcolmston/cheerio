@@ -68,3 +68,19 @@ dependency-free and standard-library only.
 
 - Initial release: HTML tokenizer, tree-construction parser, CSS selector
   engine, and a chainable jQuery-style Selection API.
+
+## [Unreleased]
+
+## [0.4.0] - 2026-08-11
+### Changed
+- Measured parity against the upstream oracle raised from 87.1% to 99.4% of
+  compared cases (306/317): dom-serializer-matching escaping (inert `<`/`>`
+  inside quoted attributes, U+00A0 as `&nbsp;`), legacy longest-prefix entity
+  decoding, HTML parser foster-parenting and self-closing-slash/stray-tag rules,
+  `:empty`/`:parent`/`:enabled` semantics with compile errors for unknown
+  pseudo-classes, correct `End`/`AddBack` stage tracking, and class/data/merge
+  accessor fixes.
+
+### Known limitation
+- The HTML5 adoption-agency algorithm is not implemented, so two deeply
+  misnested-formatting cases still differ from upstream.

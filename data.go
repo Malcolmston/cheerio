@@ -46,7 +46,14 @@ func (s *Selection) Data(key string) (string, bool) {
 	if len(s.nodes) == 0 {
 		return "", false
 	}
-	return s.nodes[0].AttrValue("data-" + camelToDash(key))
+	n := s.nodes[0]
+	dashed := camelToDash(key)
+	if n.dataCache != nil {
+		if v, ok := n.dataCache[dashed]; ok {
+			return v, true
+		}
+	}
+	return n.AttrValue("data-" + dashed)
 }
 
 // DataOr returns the data-* value for key on the first selected element, or def
@@ -58,14 +65,21 @@ func (s *Selection) DataOr(key, def string) string {
 	return def
 }
 
-// SetData sets the data-* attribute for key on every selected element and
-// returns the receiver. The key is normalized to dashed form.
+// SetData stores a data value for key on every selected element and returns the
+// receiver. Matching cheerio's .data(key, value), the value is kept in an
+// in-memory cache and is NOT written back as a data-* attribute, so serialising
+// the element afterwards does not show it. The key is normalized to dashed form
+// for storage.
 func (s *Selection) SetData(key, val string) *Selection {
-	attr := "data-" + camelToDash(key)
+	dashed := camelToDash(key)
 	for _, n := range s.nodes {
-		if n.Type == ElementNode {
-			n.setAttr(attr, val)
+		if n.Type != ElementNode {
+			continue
 		}
+		if n.dataCache == nil {
+			n.dataCache = make(map[string]string)
+		}
+		n.dataCache[dashed] = val
 	}
 	return s
 }
@@ -78,10 +92,15 @@ func (s *Selection) DataMap() map[string]string {
 	if len(s.nodes) == 0 {
 		return out
 	}
-	for _, a := range s.nodes[0].Attr {
+	n := s.nodes[0]
+	for _, a := range n.Attr {
 		if strings.HasPrefix(a.Key, "data-") {
 			out[dashToCamel(strings.TrimPrefix(a.Key, "data-"))] = a.Val
 		}
+	}
+	// In-memory values set via SetData overlay (and shadow) the attributes.
+	for dashed, v := range n.dataCache {
+		out[dashToCamel(dashed)] = v
 	}
 	return out
 }

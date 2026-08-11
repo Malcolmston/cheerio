@@ -101,13 +101,29 @@ func (p *parser) handleText(data string) {
 func (p *parser) handleStartTag(tok token) {
 	name := tok.data
 
+	// A <col> start tag is only meaningful inside a table/colgroup; the HTML5
+	// tree builder ignores it anywhere else (it never reaches "in body").
+	if name == "col" && !p.inColContext() {
+		return
+	}
+
 	p.applyImplicitCloses(name)
 	p.applyImpliedTableSection(name)
 
 	el := &Node{Type: ElementNode, Data: name, Attr: tok.attr}
-	p.current().AppendChild(el)
 
-	if voidElements[name] || tok.selfClosing {
+	// Foster parenting: a non-table element opened while the current node is a
+	// <table> is moved out and inserted immediately before the table, rather than
+	// nested inside it (HTML5 "in table" insertion mode).
+	if p.current().Data == "table" && !tableScoped[name] {
+		p.fosterParent(el)
+	} else {
+		p.current().AppendChild(el)
+	}
+
+	// The self-closing slash is only honoured for void elements; on ordinary HTML
+	// elements ("<span/>") it is ignored, so the element stays open.
+	if voidElements[name] {
 		return
 	}
 
@@ -126,6 +142,49 @@ func (p *parser) handleStartTag(tok token) {
 	}
 
 	p.push(el)
+}
+
+// tableScoped is the set of elements that legitimately live directly inside a
+// <table> and therefore are not foster-parented out of it.
+var tableScoped = map[string]bool{
+	"caption": true, "colgroup": true, "col": true, "thead": true,
+	"tbody": true, "tfoot": true, "tr": true, "td": true, "th": true,
+	"script": true, "style": true, "template": true, "form": true,
+}
+
+// inColContext reports whether the open-element stack currently has a table or
+// colgroup, the only contexts in which a <col> start tag is retained.
+func (p *parser) inColContext() bool {
+	for i := len(p.stack) - 1; i >= 1; i-- {
+		switch p.stack[i].Data {
+		case "table", "colgroup":
+			return true
+		}
+	}
+	return false
+}
+
+// fosterParent inserts el immediately before the current <table> in the table's
+// parent, implementing the HTML5 foster-parenting rule for stray content in
+// table context. el's Parent is updated accordingly.
+func (p *parser) fosterParent(el *Node) {
+	table := p.current()
+	parent := table.Parent
+	if parent == nil {
+		table.AppendChild(el)
+		return
+	}
+	idx := len(parent.Children)
+	for i, c := range parent.Children {
+		if c == table {
+			idx = i
+			break
+		}
+	}
+	parent.Children = append(parent.Children, nil)
+	copy(parent.Children[idx+1:], parent.Children[idx:])
+	parent.Children[idx] = el
+	el.Parent = parent
 }
 
 // applyImpliedTableSection inserts an implicit <tbody> when a <tr> is opened
@@ -177,6 +236,13 @@ func (p *parser) handleEndTag(name string) {
 		return
 	}
 	if !p.hasOpen(name) {
+		// A </p> with no <p> open synthesises an empty <p></p> (HTML5 "act as if
+		// a <p> start tag had been seen"), but only once the current node already
+		// contains element content — matching parse5's observed behaviour, where a
+		// stray </p> after only text (or nothing) is dropped.
+		if name == "p" && p.currentHasElementChild() {
+			p.current().AppendChild(&Node{Type: ElementNode, Data: "p"})
+		}
 		return
 	}
 	for len(p.stack) > 1 {
@@ -186,6 +252,17 @@ func (p *parser) handleEndTag(name string) {
 			return
 		}
 	}
+}
+
+// currentHasElementChild reports whether the current node already has at least
+// one element child.
+func (p *parser) currentHasElementChild() bool {
+	for _, c := range p.current().Children {
+		if c.Type == ElementNode {
+			return true
+		}
+	}
+	return false
 }
 
 // hasOpen reports whether an element with the given tag is on the open stack.

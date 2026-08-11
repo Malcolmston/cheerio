@@ -298,6 +298,13 @@ func parsePseudo(s string, i int) (pseudoMatcher, int, bool) {
 	}
 	name = strings.ToLower(name)
 	i = ni
+	if !knownPseudos[name] {
+		// An unrecognised pseudo-class is a hard parse error. The lenient
+		// parseSelector drops the whole group (matching nothing); the strict
+		// Compile path surfaces it as an error, matching cheerio/css-select which
+		// throws "Unknown pseudo-class".
+		return pseudoMatcher{}, i, false
+	}
 	var pm pseudoMatcher
 	pm.name = name
 
@@ -337,6 +344,18 @@ func parsePseudo(s string, i int) (pseudoMatcher, int, bool) {
 		}
 	}
 	return pm, i, true
+}
+
+// knownPseudos is the set of pseudo-class names the matcher understands. A
+// pseudo-class outside this set is rejected at parse time so that Compile can
+// report it, mirroring css-select's "Unknown pseudo-class" error.
+var knownPseudos = map[string]bool{
+	"first-child": true, "last-child": true, "only-child": true,
+	"first-of-type": true, "last-of-type": true, "only-of-type": true,
+	"nth-child": true, "nth-last-child": true, "nth-of-type": true,
+	"nth-last-of-type": true, "empty": true, "parent": true, "root": true,
+	"not": true, "has": true, "contains": true, "input": true, "header": true,
+	"checked": true, "selected": true, "disabled": true, "enabled": true,
 }
 
 // unquoteArg trims whitespace and a single layer of matching quotes from a
@@ -659,9 +678,12 @@ func (pm pseudoMatcher) match(n *Node) bool {
 	case "nth-last-of-type":
 		return matchNth(typeIndexFromEnd(n), pm.a, pm.b)
 	case "empty":
-		return len(n.elementChildren()) == 0 && !hasNonSpaceText(n)
+		// Per CSS Selectors Level 3 (and css-select), an element is :empty only
+		// when it has no child elements and no text nodes at all — a
+		// whitespace-only text child counts as content, so it is NOT empty.
+		return len(n.elementChildren()) == 0 && !hasTextContent(n)
 	case "parent":
-		return len(n.elementChildren()) > 0 || hasNonSpaceText(n)
+		return len(n.elementChildren()) > 0 || hasTextContent(n)
 	case "root":
 		return n.Parent != nil && n.Parent.Type == DocumentNode
 	case "not":
@@ -716,8 +738,11 @@ func (pm pseudoMatcher) match(n *Node) bool {
 		_, ok := n.AttrValue("disabled")
 		return ok && canBeDisabled(n)
 	case "enabled":
+		// css-select treats :enabled as "any element that does not carry a
+		// disabled attribute", which is broader than the form-control set used by
+		// :disabled — a <form> with no disabled attribute matches :enabled.
 		_, ok := n.AttrValue("disabled")
-		return !ok && canBeDisabled(n)
+		return !ok
 	}
 	return false
 }
@@ -876,6 +901,17 @@ func nextElementSibling(n *Node) *Node {
 func hasNonSpaceText(n *Node) bool {
 	for _, c := range n.Children {
 		if c.Type == TextNode && strings.TrimSpace(c.Data) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// hasTextContent reports whether n has any text-node child with a non-empty
+// value, treating whitespace as content (used by :empty and :parent).
+func hasTextContent(n *Node) bool {
+	for _, c := range n.Children {
+		if c.Type == TextNode && c.Data != "" {
 			return true
 		}
 	}

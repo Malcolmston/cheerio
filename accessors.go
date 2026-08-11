@@ -53,29 +53,49 @@ func (s *Selection) HasClass(class string) bool {
 }
 
 // AddClass adds one or more space-separated classes to every selected element.
+// It preserves the original class attribute's internal whitespace (only leading
+// and trailing whitespace is trimmed), appending new tokens with a single
+// space, exactly as cheerio's addClass does. Duplicate tokens are not re-added.
 func (s *Selection) AddClass(classes string) *Selection {
 	toAdd := strings.Fields(classes)
 	for _, n := range s.nodes {
 		if n.Type != ElementNode {
 			continue
 		}
-		existing := n.classes()
-		for _, c := range toAdd {
-			if !containsStr(existing, c) {
-				existing = append(existing, c)
+		className, _ := n.AttrValue("class")
+		if className == "" {
+			n.setAttr("class", strings.Join(toAdd, " "))
+			continue
+		}
+		// Wrap in spaces so a membership test is a simple substring search; this
+		// keeps the existing inter-token whitespace byte-for-byte.
+		setClass := " " + className + " "
+		for _, cn := range toAdd {
+			if !strings.Contains(setClass, " "+cn+" ") {
+				setClass += cn + " "
 			}
 		}
-		n.setAttr("class", strings.Join(existing, " "))
+		n.setAttr("class", strings.TrimSpace(setClass))
 	}
 	return s
 }
 
-// RemoveClass removes one or more space-separated classes from every selected
-// element. Removing all classes leaves an empty class attribute.
-func (s *Selection) RemoveClass(classes string) *Selection {
-	toRemove := strings.Fields(classes)
+// RemoveClass removes classes from every selected element. Called with one or
+// more space-separated class strings it removes those tokens; called with no
+// argument it removes every class, leaving an empty class attribute (matching
+// cheerio's zero-argument removeClass()).
+func (s *Selection) RemoveClass(classes ...string) *Selection {
+	removeAll := len(classes) == 0
+	var toRemove []string
+	for _, c := range classes {
+		toRemove = append(toRemove, strings.Fields(c)...)
+	}
 	for _, n := range s.nodes {
 		if n.Type != ElementNode {
+			continue
+		}
+		if removeAll {
+			n.setAttr("class", "")
 			continue
 		}
 		var kept []string

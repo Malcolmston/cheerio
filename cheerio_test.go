@@ -168,9 +168,11 @@ func TestNotWithCompound(t *testing.T) {
 }
 
 func TestEmptyPseudo(t *testing.T) {
+	// Per CSS/css-select, a whitespace-only element is NOT :empty (its text node
+	// counts as content), so only the truly-empty span matches.
 	doc := Load(`<div><span></span><span>x</span><span>  </span></div>`)
-	if got := doc.Find("span:empty").Length(); got != 2 {
-		t.Fatalf("span:empty = %d, want 2", got)
+	if got := doc.Find("span:empty").Length(); got != 1 {
+		t.Fatalf("span:empty = %d, want 1", got)
 	}
 }
 
@@ -531,9 +533,15 @@ func TestAttributeQuotingVariants(t *testing.T) {
 }
 
 func TestSelfClosing(t *testing.T) {
+	// The self-closing slash is ignored on non-void HTML elements (including
+	// unknown/custom elements), matching the HTML5 parser and cheerio: the
+	// custom element stays open and the following span nests inside it.
 	doc := Load(`<div><custom-el/><span>x</span></div>`)
-	if doc.Find("div > span").Length() != 1 {
-		t.Fatal("self-closing custom element should not swallow span")
+	if doc.Find("div > span").Length() != 0 {
+		t.Fatal("self-closing slash should be ignored: span must nest in custom-el")
+	}
+	if doc.Find("custom-el > span").Length() != 1 {
+		t.Fatal("span should be a child of the still-open custom element")
 	}
 }
 

@@ -48,10 +48,11 @@ func TestMerge(t *testing.T) {
 	all := doc.Find("a").Nodes()
 	head := all[:1]
 	got := Merge(head, all[1], all[2], all[0]) // includes a duplicate of head[0]
-	if len(got) != 3 {
-		t.Fatalf("Merge len = %d, want 3 (deduped)", len(got))
+	// Like jQuery/cheerio $.merge, Merge concatenates without de-duplicating.
+	if len(got) != 4 {
+		t.Fatalf("Merge len = %d, want 4 (concatenated)", len(got))
 	}
-	wantIDs := []string{"1", "2", "3"}
+	wantIDs := []string{"1", "2", "3", "1"}
 	for i, n := range got {
 		if id, _ := n.AttrValue("id"); id != wantIDs[i] {
 			t.Errorf("Merge[%d] id = %q, want %q", i, id, wantIDs[i])

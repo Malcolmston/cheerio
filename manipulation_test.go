@@ -294,8 +294,13 @@ func TestDataGetSet(t *testing.T) {
 		t.Fatalf("data dashed = %q ok=%v", v, ok)
 	}
 	d.SetData("newKey", "z")
-	if v, _ := d.Attr("data-new-key"); v != "z" {
-		t.Fatalf("setData attr = %q", v)
+	// Like cheerio, SetData caches the value in memory and does NOT write a
+	// data-* attribute; the getter reads it back from the cache.
+	if v, ok := d.Attr("data-new-key"); ok || v != "" {
+		t.Fatalf("setData should not write an attribute, got %q ok=%v", v, ok)
+	}
+	if v, ok := d.Data("newKey"); !ok || v != "z" {
+		t.Fatalf("setData cache read = %q ok=%v", v, ok)
 	}
 	m := d.DataMap()
 	if m["fooBar"] != "1" || m["x"] != "y" || m["newKey"] != "z" {

@@ -377,12 +377,19 @@ func (s *Selection) AddBack(selector ...string) *Selection {
 	return s.pushStack(orderedUnique(s.doc, combined))
 }
 
-// maybeFilter applies an optional trailing selector argument.
+// maybeFilter applies an optional trailing selector argument. The filtered
+// result inherits the receiver's previous-stage link rather than pointing at
+// the (intermediate) unfiltered set, so a traversal method such as
+// Children(selector) counts as a single stage for End and AddBack — matching
+// jQuery, where .children(sel) sets prevObject to the selection it was called
+// on, not to an internal filtering step.
 func (s *Selection) maybeFilter(selector []string) *Selection {
 	if len(selector) == 0 || strings.TrimSpace(selector[0]) == "" {
 		return s
 	}
-	return s.Filter(selector[0])
+	r := s.Filter(selector[0])
+	r.prev = s.prev
+	return r
 }
 
 // ---------------------------------------------------------------------------

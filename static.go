@@ -8,7 +8,12 @@ import "strings"
 // hand to the manipulation methods (AppendNodes, BeforeNodes, ...).
 //
 // Parsing never fails: malformed input is recovered the way a browser would.
+// An empty (or whitespace-only markup with no nodes) input returns nil, matching
+// cheerio's $.parseHTML which returns null for an empty string.
 func ParseHTML(html string) []*Node {
+	if html == "" {
+		return nil
+	}
 	return parseFragment(html)
 }
 
@@ -27,14 +32,15 @@ func Contains(container, contained *Node) bool {
 	return false
 }
 
-// Merge appends the nodes of tail to head, removing duplicates while preserving
-// first-seen order, and returns the combined slice. The input slices are not
-// modified. It mirrors the static cheerio.merge helper for combining node sets.
+// Merge appends the nodes of tail to head and returns the combined slice,
+// mirroring the static cheerio.merge helper (which is jQuery's $.merge). Like
+// upstream it concatenates without de-duplicating: a node present in both
+// inputs appears twice. The input slices are not modified.
 func Merge(head []*Node, tail ...*Node) []*Node {
 	combined := make([]*Node, 0, len(head)+len(tail))
 	combined = append(combined, head...)
 	combined = append(combined, tail...)
-	return unique(combined)
+	return combined
 }
 
 // RenderNodes returns the serialized outer HTML of every supplied node,

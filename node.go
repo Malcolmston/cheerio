@@ -36,6 +36,12 @@ type Node struct {
 	Attr     []Attribute // ordered attributes (elements only)
 	Parent   *Node
 	Children []*Node
+
+	// dataCache holds values set via Selection.SetData. Like cheerio, .data(k,v)
+	// stores the value in an in-memory cache (keyed by the dashed suffix, e.g.
+	// "foo-bar") and does NOT write a data-* attribute to the DOM; the getter
+	// overlays this cache on top of the element's data-* attributes.
+	dataCache map[string]string
 }
 
 // voidElements are HTML elements that never have children and are closed

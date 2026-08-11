@@ -1,7 +1,6 @@
 package cheerio
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 )
@@ -106,7 +105,10 @@ func (s *Selection) IsMatcher(m *Matcher) bool {
 // same grammar as parseSelector but reports failures instead of dropping them.
 func compileSelector(s string) (selectorList, error) {
 	if strings.TrimSpace(s) == "" {
-		return nil, errors.New("cheerio: empty selector")
+		// cheerio's $("") yields an empty selection rather than throwing, so an
+		// empty selector compiles successfully into a matcher that matches
+		// nothing (an empty selectorList).
+		return selectorList{}, nil
 	}
 	var list selectorList
 	for _, group := range splitTopLevel(s, ',') {

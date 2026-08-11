@@ -56,10 +56,13 @@ func (s *Selection) RemoveData(keys ...string) *Selection {
 				}
 			}
 			n.Attr = kept
+			n.dataCache = nil
 			continue
 		}
 		for _, k := range keys {
-			n.removeAttr("data-" + camelToDash(k))
+			dashed := camelToDash(k)
+			n.removeAttr("data-" + dashed)
+			delete(n.dataCache, dashed)
 		}
 	}
 	return s

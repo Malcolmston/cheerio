@@ -9,7 +9,15 @@ func TestCompileErrors(t *testing.T) {
 			t.Errorf("Compile(%q) unexpected error: %v", sel, err)
 		}
 	}
-	invalid := []string{"", "   ", "a,", ",b", "["}
+	// An empty or whitespace-only selector is valid (it matches nothing), matching
+	// cheerio's $("") — only genuinely malformed selectors error.
+	empty := []string{"", "   "}
+	for _, sel := range empty {
+		if _, err := Compile(sel); err != nil {
+			t.Errorf("Compile(%q) unexpected error: %v", sel, err)
+		}
+	}
+	invalid := []string{"a,", ",b", "[", ":totally-unknown"}
 	for _, sel := range invalid {
 		if _, err := Compile(sel); err == nil {
 			t.Errorf("Compile(%q) expected error, got nil", sel)
@@ -23,7 +31,7 @@ func TestMustCompilePanics(t *testing.T) {
 			t.Errorf("MustCompile(bad) did not panic")
 		}
 	}()
-	MustCompile("")
+	MustCompile("[")
 }
 
 func TestMatcherMatchAndString(t *testing.T) {
